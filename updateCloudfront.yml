@@ -1,0 +1,44 @@
+name: Update CloudFront
+on: 
+  workflow_run:
+    workflows: ["Deploy Lambda"]
+    types: [completed]
+jobs:
+  update_cloudfront:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Get Latest Lambda Version
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: # Specify region here
+        run: |
+          function_name="sample-project"
+          region="# Specify region here"
+          
+          echo "Getting ARN for Lambda"
+
+          lambda_arn=$(
+          aws lambda list-versions-by-function \
+            --function-name "$function_name" \
+            --region "$region" \
+            --query "max_by(Versions, &to_number(to_number(Version) || '0'))" | jq -r '.FunctionArn')
+
+          echo "sample-project_lambda_arn=$(echo $lambda_arn)" >> $GITHUB_ENV
+
+      - name: Update CloudFront with Lambda@edge ARN
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: # Specify region here
+        uses: elseu/elsb-dbit-cloudfront-lambda-edge-update-action@master
+        with:
+           distribution_id: # Specify CDN Distribution ID here
+           path_pattern: 'Default'
+           lambda_association_event_type: 'origin-request'
+           lambda_association_version_arn: ${{ env.sample-project_lambda_arn }}
+           cloudfront_invalidation_required: false
+           aws_region: # Specify region here
+           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
